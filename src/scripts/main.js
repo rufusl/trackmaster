@@ -76,7 +76,6 @@
 
         var trackMesh = null;
         var lastPoint = null;
-        var useExtrudePath = false;
         function extendTrack(to) {
             var trackWidth = 0.5;
             var maxPoints = 250;
@@ -94,37 +93,53 @@
             }
 
             var i;
-            var points = [];
-            if (useExtrudePath) {
-                points = [
-                    new THREE.Vector2(-trackWidth * 0.5, -0.05),
-                    new THREE.Vector2(-trackWidth * 0.5, 0.05),
-                    new THREE.Vector2(trackWidth * 0.5, 0.05),
-                    new THREE.Vector2(trackWidth * 0.5, -0.05)
-                ]
-            }
-            else {
-                for (i = 0; i < gamestate.points.vertices.length; i++) {
-                    points.push(new THREE.Vector2(gamestate.points.vertices[i].x - trackWidth * 0.5, -gamestate.points.vertices[i].z));
+            var points = [
+                new THREE.Vector2(-trackWidth * 0.5, -0.05),
+                new THREE.Vector2(-trackWidth * 0.5, 0.05),
+                new THREE.Vector2(trackWidth * 0.5, 0.05),
+                new THREE.Vector2(trackWidth * 0.5, -0.05)
+            ];
+
+            var frames = (function createFrames() {
+                var ps = gamestate.points.vertices;
+                var tangents = [];
+                var normals = [];
+                var binormals = [];
+
+	            var tang, norm;
+	            var defaultNorm = new THREE.Vector3(1,0,0);
+                for (i = 0; i + 1 < ps.length; i++) {
+                    tang = (new THREE.Vector3().copy(ps[i+1]).sub(ps[i]).normalize());
+                    tangents.push(tang);
+                    norm = defaultNorm;
+                    normals.push(norm);
+                    binormals.push(new THREE.Vector3().copy(tang).cross(norm));
                 }
-                for (i = points.length - 1; i >= 0; i--) {
-                    points.push(new THREE.Vector2(points[i].x + trackWidth, points[i].y));
-                }
-            }
+
+                tang = new THREE.Vector3(0,0,-1);
+                tangents.push(tang);
+                norm = defaultNorm;
+                normals.push(norm);
+                binormals.push(new THREE.Vector3().copy(tang).cross(norm));
+
+                return {
+                    tangents: tangents,
+                    normals: normals,
+                    binormals: binormals
+                };
+            })();
 
             var extrudeSettings = {
                 amount: 0.1,
-                steps: 1,
+                extrudePath: new THREE.CatmullRomCurve3(gamestate.points.vertices),
+                steps: gamestate.points.vertices.length - 1,
+                frames: frames,
                 //curveSegments: 1,
                 bevelEnabled: false,
                 bevelSegments: 2,
                 bevelSize: 0.1,
                 bevelThickness: 0.1
             };
-            if (useExtrudePath) {
-                extrudeSettings.extrudePath =  new THREE.CatmullRomCurve3(gamestate.points.vertices);
-                extrudeSettings.steps = gamestate.points.vertices.length;
-            }
             var geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points), extrudeSettings);
 
             if (trackMesh) {
@@ -134,14 +149,19 @@
                 //map: new THREE.TextureLoader().load('../assets/textures/crate.gif'),
                 wireframe: true
             }));
-            if (!useExtrudePath) {
-                trackMesh.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI * 0.5);
-                trackMesh.position.set(0, -0.4, -0.6);
-            }
+
             trackRoot.add(trackMesh);
         }
 
         function update(td) {
+
+	        camera.translateZ(-0.5 * td);
+
+            // camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
+            // gamestate.cameraDist += cameraSpeed * td;
+            // camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
+
+
             var i;
             var relScreenPos = new THREE.Vector2().copy(input.screenPosition).divide(windowSize);
             relScreenPos = TM.screenToNdc(relScreenPos);
@@ -156,17 +176,11 @@
             planePos.setY(THREE.Math.clamp(planePos.y, -1, -0.2));
             planePos = new THREE.Vector3(planePos.x, planePos.y, -mousePlaneDepth - trackRoot.position.z);
             planePos.applyMatrix4(camera.matrixWorld);
-            planePos.setZ(planePos.z + 0.5 * td);
+	        planePos.setZ(planePos.z + 0.5 * td);
 
             //pointer.position.copy(planePos);
 
             extendTrack(planePos);
-
-            camera.translateZ(-0.5 * td);
-
-            // camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
-            // gamestate.cameraDist += cameraSpeed * td;
-            // camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
 
             // env.updateCamera(camera);
 
