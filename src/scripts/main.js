@@ -74,7 +74,6 @@
         var trackRoot = new THREE.Object3D();
         scene.add(trackRoot);
 
-        var trackPoints = [];
         var trackMesh = null;
         var lastPoint = null;
         var useExtrudePath = false;
@@ -86,12 +85,12 @@
                 return;
             }
             lastPoint = to.clone();
-            trackPoints.push(to);
-            if (trackPoints.length === 1) {
+            gamestate.points.vertices.push(to);
+            if (gamestate.points.vertices.length === 1) {
                 return;
             }
-            if (trackPoints.length > maxPoints) {
-                trackPoints.splice(0, trackPoints.length - maxPoints / 2);
+            if (gamestate.points.vertices.length > maxPoints) {
+                gamestate.points.vertices.splice(0, gamestate.points.vertices.length - maxPoints / 2);
             }
 
             var i;
@@ -105,8 +104,8 @@
                 ]
             }
             else {
-                for (i = 0; i < trackPoints.length; i++) {
-                    points.push(new THREE.Vector2(trackPoints[i].x - trackWidth * 0.5, -trackPoints[i].z));
+                for (i = 0; i < gamestate.points.vertices.length; i++) {
+                    points.push(new THREE.Vector2(gamestate.points.vertices[i].x - trackWidth * 0.5, -gamestate.points.vertices[i].z));
                 }
                 for (i = points.length - 1; i >= 0; i--) {
                     points.push(new THREE.Vector2(points[i].x + trackWidth, points[i].y));
@@ -123,8 +122,8 @@
                 bevelThickness: 0.1
             };
             if (useExtrudePath) {
-                extrudeSettings.extrudePath =  new THREE.CatmullRomCurve3(trackPoints);
-                extrudeSettings.steps = trackPoints.length;
+                extrudeSettings.extrudePath =  new THREE.CatmullRomCurve3(gamestate.points.vertices);
+                extrudeSettings.steps = gamestate.points.vertices.length;
             }
             var geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points), extrudeSettings);
 
@@ -157,38 +156,17 @@
             planePos.setY(THREE.Math.clamp(planePos.y, -1, -0.2));
             planePos = new THREE.Vector3(planePos.x, planePos.y, -mousePlaneDepth - trackRoot.position.z);
             planePos.applyMatrix4(camera.matrixWorld);
+            planePos.setZ(planePos.z + 0.5 * td);
 
             //pointer.position.copy(planePos);
 
             extendTrack(planePos);
 
-            trackRoot.translateZ(0.5 * td);
+            camera.translateZ(-0.5 * td);
 
-            //camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
-            //camera.position.set(trackRoot.position.x, trackRoot.position.y, trackRoot.position.z); //.add(cameraOffset);
-            gamestate.cameraDist += cameraSpeed * td;
-            //camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
-            //camera.lookAt(planePos).add(cameraLookatOffset);
-
-            // var pprev = gamestate.points[gamestate.isegmentcur];
-            // var linecur = new THREE.Line3(pprev, planePos);
-
-            //var linelen = linecur.distance();
-
-            // if (mesh) {
-            //     for (i = 0; i < mesh.length; ++i) {
-            //         scene.remove(mesh[i]);
-            //     }
-            // }
-            // mesh = [];
-            //
-            // var geometry = new THREE.Geometry();
-            // geometry.vertices = [gamestate.points.vertices.last(), planePos];
-            // var o = new THREE.Line(geometry, material);
-            // mesh.push(o);
-            // for (i = 0; i < mesh.length; ++i) {
-            //     scene.add(mesh[i]);
-            // }
+            // camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
+            // gamestate.cameraDist += cameraSpeed * td;
+            // camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
 
             // env.updateCamera(camera);
 
