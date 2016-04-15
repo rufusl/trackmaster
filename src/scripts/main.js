@@ -54,89 +54,166 @@
     function Game() {
         // initial game setup
         var mesh;
-        var point;
         var material = new THREE.LineBasicMaterial( { color : 0xffdd00, linewidth: 4 } );
         var gamestate = new Gamestate();
         var env = new Env();
         gamestate.lastPointClock.start();
+        var fovh = fovv * camera.aspect;
 
         // initial segment
-        var geo = new THREE.Geometry();
-        geo.vertices = gamestate.points.vertices;
-        var curve = new THREE.Line(geo, material);
-        scene.add(curve);
+        (function() {
+            var geo = new THREE.Geometry();
+            geo.vertices = gamestate.points.vertices;
+            var curve = new THREE.Line(geo, material);
+            scene.add(curve);
+        })();
 
-        return {
-            update: update
-        };
+        var pointer = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0,0,0), 1, 0xffff00);
+        scene.add(pointer);
+
+        var trackRoot = new THREE.Object3D();
+        scene.add(trackRoot);
+
+        var trackPoints = [];
+        var trackMesh = null;
+        var lastPoint = null;
+        var useExtrudePath = false;
+        function extendTrack(to) {
+            var trackWidth = 0.5;
+            var maxPoints = 250;
+
+            if (lastPoint && to.distanceTo(lastPoint) < 0.05) {
+                return;
+            }
+            lastPoint = to.clone();
+            trackPoints.push(to);
+            if (trackPoints.length === 1) {
+                return;
+            }
+            if (trackPoints.length > maxPoints) {
+                trackPoints.splice(0, trackPoints.length - maxPoints / 2);
+            }
+
+            var i;
+            var points = [];
+            if (useExtrudePath) {
+                points = [
+                    new THREE.Vector2(-trackWidth * 0.5, -0.05),
+                    new THREE.Vector2(-trackWidth * 0.5, 0.05),
+                    new THREE.Vector2(trackWidth * 0.5, 0.05),
+                    new THREE.Vector2(trackWidth * 0.5, -0.05)
+                ]
+            }
+            else {
+                for (i = 0; i < trackPoints.length; i++) {
+                    points.push(new THREE.Vector2(trackPoints[i].x - trackWidth * 0.5, -trackPoints[i].z));
+                }
+                for (i = points.length - 1; i >= 0; i--) {
+                    points.push(new THREE.Vector2(points[i].x + trackWidth, points[i].y));
+                }
+            }
+
+            var extrudeSettings = {
+                amount: 0.1,
+                steps: 1,
+                //curveSegments: 1,
+                bevelEnabled: false,
+                bevelSegments: 2,
+                bevelSize: 0.1,
+                bevelThickness: 0.1
+            };
+            if (useExtrudePath) {
+                extrudeSettings.extrudePath =  new THREE.CatmullRomCurve3(trackPoints);
+                extrudeSettings.steps = trackPoints.length;
+            }
+            var geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points), extrudeSettings);
+
+            if (trackMesh) {
+                trackRoot.remove(trackMesh);
+            }
+            trackMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+                //map: new THREE.TextureLoader().load('../assets/textures/crate.gif'),
+                wireframe: true
+            }));
+            if (!useExtrudePath) {
+                trackMesh.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI * 0.5);
+                trackMesh.position.set(0, -0.4, -0.6);
+            }
+            trackRoot.add(trackMesh);
+        }
 
         function update(td) {
             var i;
             var relScreenPos = new THREE.Vector2().copy(input.screenPosition).divide(windowSize);
             relScreenPos = TM.screenToNdc(relScreenPos);
-
-            var fovh = fovv * camera.aspect;
             var planePos = (relScreenPos.multiply(
                 new THREE.Vector2(
                     Math.tan(TM.toRadians(fovh / 2))
                     , Math.tan(TM.toRadians(fovv / 2))
                 ).multiplyScalar(mousePlaneDepth)
             ));
-            planePos = new THREE.Vector3(planePos.x, planePos.y, -mousePlaneDepth);
+
+            planePos.setX(THREE.Math.clamp(planePos.x, -1, 1));
+            planePos.setY(THREE.Math.clamp(planePos.y, -1, -0.2));
+            planePos = new THREE.Vector3(planePos.x, planePos.y, -mousePlaneDepth - trackRoot.position.z);
             planePos.applyMatrix4(camera.matrixWorld);
-            //planePos.add(camera.position);
 
-            if (point) {
-                scene.remove(point);
-            }
-            point = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), planePos, 1, 0xffff00);
-            scene.add(point);
+            //pointer.position.copy(planePos);
 
-            camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
+            extendTrack(planePos);
+
+            trackRoot.translateZ(0.5 * td);
+
+            //camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
+            //camera.position.set(trackRoot.position.x, trackRoot.position.y, trackRoot.position.z); //.add(cameraOffset);
             gamestate.cameraDist += cameraSpeed * td;
-            camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
+            //camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
+            //camera.lookAt(planePos).add(cameraLookatOffset);
 
-            var pprev = gamestate.points[gamestate.isegmentcur];
-            var linecur = new THREE.Line3(pprev, planePos);
+            // var pprev = gamestate.points[gamestate.isegmentcur];
+            // var linecur = new THREE.Line3(pprev, planePos);
 
             //var linelen = linecur.distance();
 
-            if (mesh) {
-                for (i = 0; i < mesh.length; ++i) {
-                    scene.remove(mesh[i]);
-                }
-            }
-            mesh = [];
+            // if (mesh) {
+            //     for (i = 0; i < mesh.length; ++i) {
+            //         scene.remove(mesh[i]);
+            //     }
+            // }
+            // mesh = [];
+            //
+            // var geometry = new THREE.Geometry();
+            // geometry.vertices = [gamestate.points.vertices.last(), planePos];
+            // var o = new THREE.Line(geometry, material);
+            // mesh.push(o);
+            // for (i = 0; i < mesh.length; ++i) {
+            //     scene.add(mesh[i]);
+            // }
 
-            var geometry = new THREE.Geometry();
-            //geometry.vertices = gamestate.points;
-            geometry.vertices = [gamestate.points.vertices.last(), planePos];
-            var o = new THREE.Line(geometry, material);
-            mesh.push(o);
-            for (i = 0; i < mesh.length; ++i) {
-                scene.add(mesh[i]);
-            }
+            // env.updateCamera(camera);
 
-            env.updateCamera(camera);
-
-            renderer.render(env.scene, env.camera);
+            //renderer.render(env.scene, env.camera);
             renderer.render(scene, camera);
 
-            if (gamestate.lastPointClock.getElapsedTime() > pointTimeStep) {
-                gamestate.points.vertices.push(planePos);
-                //TODO: use td, might cause slight drift
-                gamestate.resetLastPointClock();
-
-                var vs = gamestate.points.vertices;
-                var geo = new THREE.Geometry();
-                geo.vertices = [
-                    vs[vs.length - 2]
-                    , vs[vs.length - 1]
-                ];
-                var curve = new THREE.Line(geo, material);
-                scene.add(curve);
-            }
+            // if (gamestate.lastPointClock.getElapsedTime() > pointTimeStep) {
+            //     gamestate.points.vertices.push(planePos);
+            //     //TODO: use td, might cause slight drift
+            //     gamestate.resetLastPointClock();
+            //
+            //     var vs = gamestate.points.vertices;
+            //     var geo = new THREE.Geometry();
+            //     geo.vertices = [
+            //         vs[vs.length - 2]
+            //         , vs[vs.length - 1]
+            //     ];
+            //     var curve = new THREE.Line(geo, material);
+            //     scene.add(curve);
+            // }
         }
+
+        return {
+            update: update
+        };
     }
 
     function Lines(vertices) {
