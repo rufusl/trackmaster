@@ -4,13 +4,12 @@
     // global constants
 	var windowSize = new THREE.Vector2(window.innerWidth, window.innerHeight);
 	var fovv = 70;
-	var pointTimeStep = 1/3;
-	var initialLength = 1;
-	var cameraOffset = new THREE.Vector3(0, 0.1, 0);
-	var cameraLookatOffset = new THREE.Vector3(0, 0.1, 0);
-	var cameraLookatLookAhead = 1;
-	var cameraSpeed = 1/3;
-	var mousePlaneDepth = initialLength + cameraSpeed * pointTimeStep;
+	var pointTimeStep = 1/2;
+	var initialLength = 10;
+	var cameraOffset = new THREE.Vector3(0, 0.6, 0);
+	var cameraLookatOffset = new THREE.Vector3(0, 0.5, 0);
+	var cameraLookatLookAhead = 0.5;
+	var cameraSpeed = 1;
 
     main();
 
@@ -57,7 +56,6 @@
         var material = new THREE.LineBasicMaterial( { color : 0xffdd00, linewidth: 4 } );
         var gamestate = new Gamestate();
         var env = new Env();
-        gamestate.lastPointClock.start();
         var fovh = fovv * camera.aspect;
 
         // initial segment
@@ -76,8 +74,17 @@
 
         var trackMesh = null;
         var lastPoint = null;
-        var useExtrudePath = false;
         function extendTrack(to) {
+            // // DEBUG
+            // (function() {
+            //     var pointer = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), to, 1, 0xffff00);
+            //     scene.add(pointer);
+            // })();
+            // gamestate.points.vertices.push(to);
+            // return;
+            // //
+
+
             var trackWidth = 0.5;
             var maxPoints = 250;
 
@@ -85,46 +92,86 @@
                 return;
             }
             lastPoint = to.clone();
-            gamestate.points.vertices.push(to);
-            if (gamestate.points.vertices.length === 1) {
-                return;
-            }
-            if (gamestate.points.vertices.length > maxPoints) {
-                gamestate.points.vertices.splice(0, gamestate.points.vertices.length - maxPoints / 2);
-            }
+
+	        var ps = gamestate.points.vertices;
+	        var tangents = gamestate.points.tangents;
+	        var normals = gamestate.points.normals;
+	        var binormals = gamestate.points.binormals;
+
+	        function create_frame(tang, defaultNorm) {
+		        //var defaultNorm = new THREE.Vector3(1,0,0);
+		        var otherNorm = new THREE.Vector3(0,0,1);
+		        var linearDep = function(a, b) {
+			        var s = a.x/b.x;
+			        for (var j = 1; j < 3; ++j) {
+				        var s0 = a.getComponent(j) / b.getComponent(j);
+				        if (s - s0 > 0.001) {
+					        return false;
+				        }
+			        }
+			        return true;
+		        };
+		        var norm = defaultNorm;
+		        if (linearDep(norm, tang)) {
+			        norm = otherNorm;
+		        }
+		        var binorm = new THREE.Vector3().copy(norm).cross(tang);
+		        //calc correct norm
+	            norm = new THREE.Vector3().copy(binorm).cross(tang);
+		        return { normal: norm, binormal: binorm };
+	        }
+
+	        //last cur point:
+	        var ilast = ps.length-1;
+	        var tang = to.clone().sub(ps[ilast-1]).normalize();
+	        var frame = create_frame(tang, normals[ilast-1]);
+	        tangents[ilast] = tang;
+	        binormals[ilast] = frame.binormal;
+	        normals[ilast] = frame.normal;
+
+	        //new point
+	        tang = to.clone().sub(ps[ilast]).normalize();
+	        frame = create_frame(tang, normals[ilast]);
+	        tangents.push(tang);
+	        normals.push(frame.normal);
+	        binormals.push(frame.binormal);
+	        ps.push(to);
+
+
+
+            // if (gamestate.points.vertices.length === 1) {
+            //     return;
+            // }
+            // if (gamestate.points.vertices.length > maxPoints) {
+            //     gamestate.points.vertices.splice(0, gamestate.points.vertices.length - maxPoints / 2);
+            //     gamestate.points.binormals.splice(0, gamestate.points.binormals.length - maxPoints / 2);
+            //}
 
             var i;
-            var points = [];
-            if (useExtrudePath) {
-                points = [
-                    new THREE.Vector2(-trackWidth * 0.5, -0.05),
-                    new THREE.Vector2(-trackWidth * 0.5, 0.05),
-                    new THREE.Vector2(trackWidth * 0.5, 0.05),
-                    new THREE.Vector2(trackWidth * 0.5, -0.05)
-                ]
-            }
-            else {
-                for (i = 0; i < gamestate.points.vertices.length; i++) {
-                    points.push(new THREE.Vector2(gamestate.points.vertices[i].x - trackWidth * 0.5, -gamestate.points.vertices[i].z));
-                }
-                for (i = points.length - 1; i >= 0; i--) {
-                    points.push(new THREE.Vector2(points[i].x + trackWidth, points[i].y));
-                }
-            }
+            var points = [
+                new THREE.Vector2(-trackWidth * 0.5, -0.05),
+                new THREE.Vector2(-trackWidth * 0.5, 0.05),
+                new THREE.Vector2(trackWidth * 0.5, 0.05),
+                new THREE.Vector2(trackWidth * 0.5, -0.05)
+            ];
+
+            var frames = {
+	            tangents: tangents,
+	            normals: normals,
+	            binormals: binormals
+            };
 
             var extrudeSettings = {
                 amount: 0.1,
-                steps: 1,
+	            extrudePath: new THREE.CatmullRomCurve3(gamestate.points.vertices),
+                steps: gamestate.points.vertices.length - 1,
+                frames: frames,
                 //curveSegments: 1,
                 bevelEnabled: false,
                 bevelSegments: 2,
                 bevelSize: 0.1,
                 bevelThickness: 0.1
             };
-            if (useExtrudePath) {
-                extrudeSettings.extrudePath =  new THREE.CatmullRomCurve3(gamestate.points.vertices);
-                extrudeSettings.steps = gamestate.points.vertices.length;
-            }
             var geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points), extrudeSettings);
 
             if (trackMesh) {
@@ -134,49 +181,51 @@
                 //map: new THREE.TextureLoader().load('../assets/textures/crate.gif'),
                 wireframe: true
             }));
-            if (!useExtrudePath) {
-                trackMesh.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI * 0.5);
-                trackMesh.position.set(0, -0.4, -0.6);
-            }
-            trackRoot.add(trackMesh);
+
+	        trackRoot.add(trackMesh);
+
+	        (function() {
+		        var pointer = new THREE.ArrowHelper(_.last(gamestate.points.binormals), _.last(gamestate.points.vertices), 1, 0xffff00);
+		        scene.add(pointer);
+            })();
+
         }
 
         function update(td) {
+
             var i;
             var relScreenPos = new THREE.Vector2().copy(input.screenPosition).divide(windowSize);
-            relScreenPos = TM.screenToNdc(relScreenPos);
-            var planePos = (relScreenPos.multiply(
-                new THREE.Vector2(
+	        relScreenPos = TM.screenToNdc(relScreenPos);
+	        relScreenPos.multiply(
+		        new THREE.Vector2(
                     Math.tan(TM.toRadians(fovh / 2))
-                    , Math.tan(TM.toRadians(fovv / 2))
-                ).multiplyScalar(mousePlaneDepth)
-            ));
-
-            planePos.setX(THREE.Math.clamp(planePos.x, -1, 1));
-            planePos.setY(THREE.Math.clamp(planePos.y, -1, -0.2));
-            planePos = new THREE.Vector3(planePos.x, planePos.y, -mousePlaneDepth - trackRoot.position.z);
+	                , Math.tan(TM.toRadians(fovv / 2))
+                )
+            );
+	        var planePos = new THREE.Vector3(relScreenPos.x, relScreenPos.y, -1)
+	        //for debug
+		            .multiplyScalar(5);
             planePos.applyMatrix4(camera.matrixWorld);
-            planePos.setZ(planePos.z + 0.5 * td);
 
-            //pointer.position.copy(planePos);
+	        pointer.position.copy(planePos);
 
-            extendTrack(planePos);
 
-            camera.translateZ(-0.5 * td);
+	        gamestate.update(td);
+            if (gamestate.lastPointTime > pointTimeStep) {
+                //planePos.setX(THREE.Math.clamp(planePos.x, -1, 1));
+                //planePos.setY(THREE.Math.clamp(planePos.y, -1, -0.2));
+                var last = gamestate.points.vertices[gamestate.points.vertices.length-1];
+                var fromLast = new THREE.Vector3().copy(planePos).sub(last);
+                var mousePlaneDepth = cameraSpeed * gamestate.lastPointTime;
+                fromLast.normalize().multiplyScalar(mousePlaneDepth);
+                //planePos = new THREE.Vector3(planePos.x, planePos.y, -mousePlaneDepth - trackRoot.position.z);
+                //planePos.setZ(planePos.z + 0.5 * td);
 
-            // camera.position.copy(gamestate.points.at(gamestate.cameraDist)).add(cameraOffset);
-            // gamestate.cameraDist += cameraSpeed * td;
-            // camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
-
-            // env.updateCamera(camera);
-
-            //renderer.render(env.scene, env.camera);
-            renderer.render(scene, camera);
-
-            // if (gamestate.lastPointClock.getElapsedTime() > pointTimeStep) {
+                // gamestate.resetLastPointClock();
+	            gamestate.lastPointTime = 0;
+		        extendTrack(fromLast.add(last));
             //     gamestate.points.vertices.push(planePos);
             //     //TODO: use td, might cause slight drift
-            //     gamestate.resetLastPointClock();
             //
             //     var vs = gamestate.points.vertices;
             //     var geo = new THREE.Geometry();
@@ -186,7 +235,21 @@
             //     ];
             //     var curve = new THREE.Line(geo, material);
             //     scene.add(curve);
-            // }
+	        }
+
+	        //camera.translateZ(-cameraSpeed * td * 1/2);
+
+            var cameraPos = gamestate.points.at(gamestate.cameraDist);
+            camera.position.copy(cameraPos).add(cameraOffset);
+            gamestate.cameraDist += cameraSpeed * td;
+            // camera.up = cameraPos.binormal;
+            camera.lookAt(gamestate.points.at(gamestate.cameraDist + cameraLookatLookAhead).add(cameraLookatOffset));
+
+            env.updateCamera(camera);
+
+	        renderer.render(env.scene, env.camera);
+            renderer.render(scene, camera);
+
         }
 
         return {
@@ -195,7 +258,10 @@
     }
 
     function Lines(vertices) {
-        this.vertices = vertices || [];
+	    this.vertices = vertices || [];
+	    this.tangents = [];
+	    this.normals = [];
+        this.binormals = [];
         this.vertices.last = function() { return this[this.length-1]; };
         this.at = function(x) {
             var vs = this.vertices;
@@ -203,7 +269,11 @@
                 var line = new THREE.Line3(vs[i], vs[i+1]);
                 var len = line.distance();
                 if (len > x) {
-                    return line.at(x/len);
+                    var t = x/len;
+                    var result = line.at(t);
+                    result.binormal = this.binormals[i].clone().lerp(this.binormals[i+1], t);
+                    result.normal = this.normals[i].clone().lerp(this.normals[i+1], t);
+                    return result;
                 }
                 x -= len;
             }
@@ -246,15 +316,32 @@
     }
 
     function Gamestate() {
-        this.resetLastPointClock = function() {
-            this.lastPointClock = new THREE.Clock(true);
-        };
-        this.lastPointClock = new THREE.Clock(false);
+        //this.resetLastPointClock = function() {
+        //    this.lastPointClock = new THREE.Clock(true);
+        //};
+	    //this.lastPointClock = new THREE.Clock(false);
+	    this.lastPointTime = 0;
+
+	    this.update = function(td) {
+		    this.lastPointTime += td;
+	    };
 
         this.points = new Lines([
             new THREE.Vector3(0, 0, 0)
-            , new THREE.Vector3(0, 0, -initialLength)
+	        , new THREE.Vector3(0, 0, -cameraSpeed)
         ]);
+        this.points.tangents = [
+            new THREE.Vector3(0, 0, -1),
+            new THREE.Vector3(0, 0, -1)
+        ];
+        this.points.binormals = [
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(0, 1, 0)
+        ];
+        this.points.normals = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(1, 0, 0)
+        ];
         this.cameraDist = 0.0;
     }
 })(window.TM = window.TM || {});
