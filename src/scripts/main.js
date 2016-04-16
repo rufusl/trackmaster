@@ -99,7 +99,6 @@
 	        var binormals = gamestate.points.binormals;
 
 	        function create_frame(tang, defaultNorm) {
-		        //var defaultNorm = new THREE.Vector3(1,0,0);
 		        var otherNorm = new THREE.Vector3(0,0,1);
 		        var linearDep = function(a, b) {
 			        var s = a.x/b.x;
